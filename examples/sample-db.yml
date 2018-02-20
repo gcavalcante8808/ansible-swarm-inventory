@@ -1,0 +1,43 @@
+---
+ - hosts: all
+   vars:
+    - operation: 'backup'
+    - force_backup: true
+   tasks:
+
+    - name: Set Backup file Name
+      set_fact:
+        backup_file: "{{ ansible_date_time.date }}.{{ stack }}.{{ role }}.gz"
+      when: operation == 'backup'
+
+    - name: Exec MySQL Backup
+      shell: docker exec "{{ inventory_hostname }}" bash -c 'mysqldump --single-transaction --databases $MYSQL_DATABASE -u $MYSQL_USER -p$MYSQL_PASSWORD | gzip' > "/tmp/{{ backup_file }}"
+      args:
+        creates: "{{ backup_file }}"
+      when: role == 'mysql' and operation == 'backup'
+      notify:
+       - save backup
+
+    - name: Exec PostGres backup
+      shell: docker exec -u postgres "{{ inventory_hostname }}" bash -c 'pg_dump ${POSTGRES_DB} | gzip' > "/tmp/{{ backup_file }}"
+      args:
+        creates: "{{ backup_file }}"
+      when: role == 'postgres' and operation == 'backup'
+      notify:
+       - save backup
+     
+   handlers:
+    - name: save backup
+      copy:
+        src: "/tmp/{{ backup_file }}"
+        dest: "/media/docker/backups/{{ backup_file }}"
+        remote_src: True
+      become: yes
+      notify:
+       - remove backup file
+
+    - name: remove backup file
+      file:
+        path: "/tmp/{{ backup_file }}"
+        state: absent
+
